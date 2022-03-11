@@ -18,7 +18,8 @@ function M.rib(opts)
   opts = opts or {}
   opts.address = opts.address or "127.0.0.1:8200"
 
-  NeuronJob = Job:new{
+  NeuronJob =
+    Job:new {
     command = "neuron",
     cwd = config.neuron_dir,
     args = {"rib", "-w", "-s", opts.address},
@@ -64,20 +65,26 @@ function M.enter_link()
     return
   end
 
-  cmd.query_id(id, config.neuron_dir, function(json)
-    if type(json) ~= "userdata" then
-      vim.cmd(string.format("edit %s", Path:new(config.neuron_dir, json.Path):absolute()))
+  cmd.query_id(
+    id,
+    config.neuron_dir,
+    function(json)
+      if type(json) ~= "userdata" then
+        vim.cmd(string.format("edit %s", Path:new(config.neuron_dir, json.Path):absolute()))
+      end
     end
-  end)
+  )
 end
 
 function M.add_all_virtual_titles(buf)
+  buf = buf or 0
   for ln, line in ipairs(api.nvim_buf_get_lines(buf, 0, -1, true)) do
     M.add_virtual_title_current_line(buf, ln, line)
   end
 end
 
 function M.add_virtual_title_current_line(buf, ln, line)
+  buf = buf or 0
   if type(line) ~= "string" then
     return
   end
@@ -86,36 +93,48 @@ function M.add_virtual_title_current_line(buf, ln, line)
     return
   end
   local start_col, end_col = utils.find_link(line)
-  cmd.query_id(id, config.neuron_dir, function(json)
-    if type(json) == "userdata" then
-      return
+  cmd.query_id(
+    id,
+    config.neuron_dir,
+    function(json)
+      if type(json) == "userdata" then
+        return
+      end
+      if json == nil then
+        return
+      end
+      if json.error then
+        return
+      end
+      -- if json.result.Left ~= nil then
+      -- minus one to convert from 1 based index to api zero based index
+      --   utils.delete_range_extmark(buf, ns, ln - 1, ln)
+      --   return
+      -- end
+      local title = json.Title
+      -- lua is one indexed
+      api.nvim_buf_set_extmark(
+        buf,
+        ns,
+        ln - 1,
+        start_col - 1,
+        {
+          end_col = end_col,
+          virt_text = {{title, config.virt_text_highlight}}
+        }
+      )
     end
-    if json == nil then
-      return
-    end
-    if json.error then
-      return
-    end
-    -- if json.result.Left ~= nil then
-    -- minus one to convert from 1 based index to api zero based index
-    --   utils.delete_range_extmark(buf, ns, ln - 1, ln)
-    --   return
-    -- end
-    local title = json.Title
-    -- lua is one indexed
-    api.nvim_buf_set_extmark(buf, ns, ln - 1, start_col - 1, {
-      end_col = end_col,
-      virt_text = {{title, config.virt_text_highlight}}
-    })
-  end)
+  )
 end
 
 function M.update_virtual_titles(buf)
+  buf = buf or 0
   api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   M.add_all_virtual_titles()
 end
 
 function M.attach_buffer_fast()
+  buf = buf or 0
   local function on_lines(buf, firstline, new_lastline)
     local lines = api.nvim_buf_get_lines(buf, firstline, new_lastline, false)
 
@@ -129,23 +148,32 @@ function M.attach_buffer_fast()
   end
 
   local task
-  api.nvim_buf_attach(0, true, {
-    on_lines = vim.schedule_wrap(function(...)
-      local empty = task == nil
+  api.nvim_buf_attach(
+    0,
+    true,
+    {
+      on_lines = vim.schedule_wrap(
+        function(...)
+          local empty = task == nil
 
-      task = {...}
+          task = {...}
 
-      if empty then
-        vim.defer_fn(function()
-          on_lines(task[2], task[4], task[6])
-          task = nil
-        end, 350)
+          if empty then
+            vim.defer_fn(
+              function()
+                on_lines(task[2], task[4], task[6])
+                task = nil
+              end,
+              350
+            )
+          end
+        end
+      ),
+      on_detach = function()
+        task = nil
       end
-    end),
-    on_detach = function()
-      task = nil
-    end
-  })
+    }
+  )
 end
 
 local function setup_autocmds()
@@ -153,24 +181,19 @@ local function setup_autocmds()
   vim.cmd [[augroup Neuron]]
   vim.cmd [[au!]]
   if config.gen_cache_on_write == true then
-    vim.cmd(string.format(
-                "au BufWritePost %s lua require'neuron/cmd'.gen(require'neuron/config'.neuron_dir)",
-                pathpattern))
+    vim.cmd(
+      string.format("au BufWritePost %s lua require'neuron/cmd'.gen(require'neuron/config'.neuron_dir)", pathpattern)
+    )
   end
   if config.virtual_titles == true then
-    vim.cmd(string.format(
-                "au BufRead %s lua require'neuron'.update_virtual_titles()",
-                pathpattern))
-    vim.cmd(string.format(
-                "au BufRead %s lua require'neuron'.attach_buffer_fast()",
-                pathpattern))
+    vim.cmd(string.format("au BufRead %s lua require'neuron'.update_virtual_titles()", pathpattern))
+    vim.cmd(string.format("au BufRead %s lua require'neuron'.attach_buffer_fast()", pathpattern))
   end
   if config.mappings == true then
-    require"neuron/mappings".setup()
+    require "neuron/mappings".setup()
   end
   if config.run ~= nil then
-    vim.cmd(string.format("au BufRead %s lua require'neuron/config'.run()",
-                          pathpattern))
+    vim.cmd(string.format("au BufRead %s lua require'neuron/config'.run()", pathpattern))
   end
   vim.cmd [[augroup END]]
 end
@@ -213,8 +236,7 @@ function M.goto_next_extmark()
   local tuple = api.nvim_win_get_cursor(0) -- (1, 0) based index
   tuple[1] = tuple[1] - 1 -- convert to zero based
 
-  local extmarks = api.nvim_buf_get_extmarks(0, ns, {tuple[1], tuple[2] + 1},
-                                             -1, {}) -- plus one because we don't want the current extmark
+  local extmarks = api.nvim_buf_get_extmarks(0, ns, {tuple[1], tuple[2] + 1}, -1, {}) -- plus one because we don't want the current extmark
 
   local next_extmark = extmarks[1]
   if next_extmark == nil then
@@ -229,8 +251,7 @@ function M.goto_prev_extmark()
   local tuple = api.nvim_win_get_cursor(0) -- (1, 0) based index
   tuple[1] = tuple[1] - 1 -- convert to zero based
 
-  local extmarks = api.nvim_buf_get_extmarks(0, ns, {tuple[1], tuple[2] - 1}, 0,
-                                             {}) -- plus one because we don't want the current extmark
+  local extmarks = api.nvim_buf_get_extmarks(0, ns, {tuple[1], tuple[2] - 1}, 0, {}) -- plus one because we don't want the current extmark
 
   local next_extmark = extmarks[1]
   if next_extmark == nil then
@@ -247,10 +268,14 @@ end
 
 ---opens random zettel
 function M.open_random()
-  cmd.query({}, config.neuron_dir, function(json)
-    local random_zettel = json[math.random(#json)]
-    vim.cmd(string.format("edit %s", Path:new(config.neuron_dir, random_zettel.Path):absolute()))
-  end)
+  cmd.query(
+    {},
+    config.neuron_dir,
+    function(json)
+      local random_zettel = json[math.random(#json)]
+      vim.cmd(string.format("edit %s", Path:new(config.neuron_dir, random_zettel.Path):absolute()))
+    end
+  )
 end
 
 return M
